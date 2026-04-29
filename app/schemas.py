@@ -17,6 +17,14 @@ class AnalyzeRequest(BaseModel):
     """Request model for analyzing log text"""
     log_text: str = Field(..., min_length=1, description="Raw log text to analyze")
 
+    @field_validator("log_text")
+    @classmethod
+    def log_text_must_not_be_whitespace(cls, v: str) -> str:
+        """Reject whitespace-only strings"""
+        if not v or v.strip() == "":
+            raise ValueError("log_text cannot be empty or whitespace-only")
+        return v
+
 
 class IncidentSummary(BaseModel):
     """Brief summary of a similar past incident"""
