@@ -1,12 +1,13 @@
 """FastAPI application for AI Incident Investigator"""
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db, engine
-from app.models import Base
-from app.schemas import AnalyzeRequest, IncidentResponse
+from app.models import Base, Incident
+from app.schemas import AnalyzeRequest, IncidentResponse, IncidentSummary, SeverityEnum
 from app.services.llm_client import get_llm_client
 from app.services.analyzer import IncidentAnalyzer
 
@@ -56,6 +57,88 @@ def analyze_incident(
         IncidentResponse with full incident details
     """
     return analyzer.analyze(request.log_text, db)
+
+
+@app.get(
+    "/incidents",
+    response_model=list[IncidentResponse],
+    summary="List all incidents",
+    description="Get all incidents ordered by creation date (newest first)"
+)
+def list_incidents(
+    db: Session = Depends(get_db)
+) -> list[IncidentResponse]:
+    """
+    List all incidents
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        List of IncidentResponse objects
+    """
+    incidents = db.query(Incident).order_by(Incident.created_at.desc()).all()
+    
+    return [
+        IncidentResponse(
+            id=incident.id,
+            log_text=incident.log_text,
+            summary=incident.summary,
+            severity=SeverityEnum(incident.severity),
+            root_cause=incident.root_cause,
+            affected_components=json.loads(incident.evidence),
+            recommended_actions=json.loads(incident.recommended_steps),
+            confidence=incident.confidence,
+            created_at=incident.created_at,
+            similar_incidents=[]
+        )
+        for incident in incidents
+    ]
+
+
+@app.get(
+    "/incidents/{incident_id}",
+    response_model=IncidentResponse,
+    summary="Get incident by ID",
+    description="Get a specific incident by its ID"
+)
+def get_incident(
+    incident_id: int,
+    db: Session = Depends(get_db)
+) -> IncidentResponse:
+    """
+    Get an incident by ID
+    
+    Args:
+        incident_id: ID of the incident to retrieve
+        db: Database session
+        
+    Returns:
+        IncidentResponse with full incident details
+        
+    Raises:
+        HTTPException(404): If incident not found
+    """
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    
+    if not incident:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Incident {incident_id} not found"
+        )
+    
+    return IncidentResponse(
+        id=incident.id,
+        log_text=incident.log_text,
+        summary=incident.summary,
+        severity=SeverityEnum(incident.severity),
+        root_cause=incident.root_cause,
+        affected_components=json.loads(incident.evidence),
+        recommended_actions=json.loads(incident.recommended_steps),
+        confidence=incident.confidence,
+        created_at=incident.created_at,
+        similar_incidents=[]
+    )
 
 
 @app.get(
